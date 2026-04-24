@@ -12,8 +12,8 @@ interface FileAttributes {
     size: number;
     duration?: number;
     path: string;
-    encryptedPath: string;
-    encryptionMetadata: any;
+    encryptedPath?: string;
+    encryptionMetadata?: any;
     metadata?: any;
     thumbnail?: string;
     isPublic: boolean;
@@ -25,7 +25,7 @@ interface FileAttributes {
     deletedAt?: Date;
 }
 
-interface FileCreationAttributes extends Optional<FileAttributes, 'id' | 'isPublic' | 'isProtected' | 'downloadCount'> {}
+interface FileCreationAttributes extends Optional<FileAttributes, 'id' | 'encryptedPath' | 'encryptionMetadata' | 'isPublic' | 'isProtected' | 'downloadCount'> {}
 
 class File extends Model<FileAttributes, FileCreationAttributes> implements FileAttributes {
     public id!: string;
@@ -37,8 +37,8 @@ class File extends Model<FileAttributes, FileCreationAttributes> implements File
     public size!: number;
     public duration?: number;
     public path!: string;
-    public encryptedPath!: string;
-    public encryptionMetadata!: any;
+    public encryptedPath?: string;
+    public encryptionMetadata?: any;
     public metadata?: any;
     public thumbnail?: string;
     public isPublic!: boolean;
@@ -76,7 +76,8 @@ File.init(
         },
         type: {
             type: DataTypes.ENUM('audio', 'score', 'lyrics', 'midi', 'other'),
-            allowNull: false
+            allowNull: false,
+            defaultValue: 'other'
         },
         format: {
             type: DataTypes.STRING(20),
@@ -94,17 +95,13 @@ File.init(
             allowNull: false
         },
         encryptedPath: {
-            type: DataTypes.STRING(500),
-            allowNull: false
+            type: DataTypes.STRING(500)
         },
         encryptionMetadata: {
-            type: DataTypes.JSONB,
-            allowNull: false,
-            defaultValue: {}
+            type: DataTypes.JSONB
         },
         metadata: {
-            type: DataTypes.JSONB,
-            defaultValue: {}
+            type: DataTypes.JSONB
         },
         thumbnail: {
             type: DataTypes.STRING(500)
@@ -129,12 +126,8 @@ File.init(
         sequelize,
         tableName: 'files',
         paranoid: true,
-        indexes: [
-            { fields: ['user_id'] },
-            { fields: ['type'] },
-            { fields: ['created_at'] }
-            // Убираем GIN индекс для name
-        ]
+        timestamps: true,
+        underscored: true
     }
 );
 

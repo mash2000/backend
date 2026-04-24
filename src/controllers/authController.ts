@@ -37,6 +37,34 @@ class AuthController {
                 return;
             }
 
+            // В методе register добавьте проверку сложности пароля
+            const checkPasswordStrength = (password: string): { isValid: boolean; message?: string } => {
+                const checks = [
+                    { test: password.length >= 8, message: 'Пароль должен содержать минимум 8 символов' },
+                    { test: /[A-Z]/.test(password), message: 'Пароль должен содержать заглавную букву' },
+                    { test: /[a-z]/.test(password), message: 'Пароль должен содержать строчную букву' },
+                    { test: /[0-9]/.test(password), message: 'Пароль должен содержать цифру' },
+                    { test: /[!@#$%^&*(),.?":{}|<>]/.test(password), message: 'Пароль должен содержать специальный символ' }
+                ];
+
+                for (const check of checks) {
+                    if (!check.test) {
+                        return { isValid: false, message: check.message };
+                    }
+                }
+                return { isValid: true };
+            };
+
+            // Используйте в методе register
+            const passwordStrength = checkPasswordStrength(password);
+            if (!passwordStrength.isValid) {
+                res.status(400).json({ 
+                    success: false,
+                    error: passwordStrength.message 
+                });
+                return;
+            }
+
             const hashedPassword = await bcrypt.hash(password, 10);
 
             const user = await User.create({

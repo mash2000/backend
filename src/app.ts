@@ -92,12 +92,13 @@ app.use(cors({
 // Error handler
 app.use(errorHandler);
 
-// Create upload directories if they don't exist
-const uploadDirs = ['uploads/temp', 'uploads/encrypted', 'logs'];
+// Создание директорий для загрузки
+const uploadDirs = ['uploads/temp', 'uploads/encrypted', 'uploads/thumbnails', 'logs'];
 uploadDirs.forEach(dir => {
     const fullPath = path.join(__dirname, '..', dir);
     if (!fs.existsSync(fullPath)) {
         fs.mkdirSync(fullPath, { recursive: true });
+        console.log(`📁 Created directory: ${fullPath}`);
     }
 });
 

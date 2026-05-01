@@ -215,11 +215,11 @@ export class FileController {
             const { page = 1, limit = 20, type, search, sort = 'createdAt', order = 'DESC' } = req.query;
             
             console.log('📡 Get files request for user:', req.user.id);
-            console.log('Sort params:', { sort, order });
+            console.log('Query params:', { page, limit, type, search, sort, order });
             
             const where: any = { userId: req.user.id };
             
-            if (type && type !== 'all') {
+            if (type && type !== 'all' && type !== 'favorites') {
                 where.type = type;
                 console.log('Filtering by type:', type);
             }
@@ -228,30 +228,19 @@ export class FileController {
                 where.name = { [Op.iLike]: `%${search}%` };
             }
 
-            // Преобразуем sort параметр в правильное имя колонки
+            // Определяем поле сортировки
             let sortColumn = 'createdAt';
-            if (sort === 'date') {
-                sortColumn = 'createdAt';
-            } else if (sort === 'name') {
-                sortColumn = 'name';
-            } else if (sort === 'size') {
-                sortColumn = 'size';
-            } else if (sort === 'type') {
-                sortColumn = 'type';
-            } else if (sort === 'duration') {
-                sortColumn = 'duration';
-            } else {
-                sortColumn = 'createdAt';
-            }
+            if (sort === 'date') sortColumn = 'createdAt';
+            else if (sort === 'name') sortColumn = 'name';
+            else if (sort === 'size') sortColumn = 'size';
+            else if (sort === 'type') sortColumn = 'type';
 
             const files = await File.findAndCountAll({
                 where,
-                include: [{ model: Tag, as: 'tags', through: { attributes: [] }, required: false }],
                 limit: parseInt(limit as string),
                 offset: (parseInt(page as string) - 1) * parseInt(limit as string),
                 order: [[sortColumn, order as string]],
-                attributes: { exclude: ['encryptionMetadata', 'encryptedPath'] },
-                distinct: true
+                attributes: ['id', 'name', 'originalName', 'type', 'format', 'size', 'duration', 'path', 'metadata', 'favorite', 'createdAt']
             });
 
             console.log(`✅ Found ${files.count} files for user ${req.user.id}`);

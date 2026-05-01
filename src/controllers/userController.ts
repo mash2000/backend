@@ -1,18 +1,15 @@
 import { Response } from 'express';
-import { Op } from 'sequelize';
 import { AuthRequest } from '../middleware/auth';
 import User from '../models/User';
 import File from '../models/File';
-import auditService from '../services/auditService';
 import sequelize from '../config/database';
 
 export class UserController {
     async getProfile(req: AuthRequest, res: Response): Promise<void> {
         try {
             const user = await User.findByPk(req.user.id, {
-                attributes: { exclude: ['passwordHash', 'encryptedMasterKey', 'keySalt', 'twoFactorSecret'] }
+                attributes: { exclude: ['passwordHash', 'encryptedMasterKey', 'keySalt'] }
             });
-
             res.json({ user });
         } catch (error) {
             console.error('Get profile error:', error);
@@ -23,28 +20,8 @@ export class UserController {
     async updateProfile(req: AuthRequest, res: Response): Promise<void> {
         try {
             const { name, avatar } = req.body;
-            
             await req.user.update({ name, avatar });
-            
-            await auditService.log({
-                userId: req.user.id,
-                action: 'UPDATE_PROFILE',
-                resourceType: 'user',
-                resourceId: req.user.id,
-                ip: req.ip || 'unknown',
-                userAgent: req.get('user-agent') || 'unknown',
-                timestamp: new Date()
-            });
-
-            res.json({
-                message: 'Profile updated successfully',
-                user: {
-                    id: req.user.id,
-                    email: req.user.email,
-                    name: req.user.name,
-                    avatar: req.user.avatar
-                }
-            });
+            res.json({ message: 'Profile updated successfully', user: req.user });
         } catch (error) {
             console.error('Update profile error:', error);
             res.status(500).json({ error: 'Failed to update profile' });
@@ -53,32 +30,52 @@ export class UserController {
 
     async getStats(req: AuthRequest, res: Response): Promise<void> {
         try {
-            const totalFiles = await File.count({ where: { userId: req.user.id } });
+            const userId = req.user.id;
             
-            // Получаем количество файлов по типам
-            const filesByType = await File.findAll({
-                where: { userId: req.user.id },
-                attributes: [
-                    'type',
-                    [sequelize.fn('COUNT', sequelize.col('type')), 'count']
-                ],
-                group: ['type']
+            // Общая статистика
+            const totalFiles = await File.count({ where: { userId } });
+            const totalSize = await File.sum('size', { where: { userId } }) || 0;
+            
+            // Статистика по типам файлов
+            const audioFiles = await File.count({ where: { userId, type: 'audio' } });
+            const scoreFiles = await File.count({ where: { userId, type: 'score' } });
+            const lyricsFiles = await File.count({ where: { userId, type: 'lyrics' } });
+            const midiFiles = await File.count({ where: { userId, type: 'midi' } });
+            
+            // Недавно добавленные (за последние 7 дней)
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            const recentlyAdded = await File.count({ 
+                where: { 
+                    userId, 
+                    createdAt: { [Op.gte]: weekAgo } 
+                } 
             });
+            
+            // Избранные файлы
+            const favorites = await File.count({ where: { userId, favorite: true } });
 
-            const recentFiles = await File.findAll({
-                where: { userId: req.user.id },
-                limit: 10,
-                order: [['createdAt', 'DESC']],
-                attributes: ['id', 'name', 'type', 'size', 'createdAt']
+            console.log('Stats for user', userId, {
+                totalFiles,
+                audioFiles,
+                scoreFiles,
+                lyricsFiles,
+                midiFiles,
+                storageUsed: totalSize,
+                storageLimit: req.user.storageLimit
             });
 
             res.json({
                 totalFiles,
-                storageUsed: req.user.storageUsed,
-                storageLimit: req.user.storageLimit,
-                storageUsedPercent: (req.user.storageUsed / req.user.storageLimit) * 100,
-                filesByType,
-                recentFiles
+                totalSize,
+                audioFiles,
+                scoreFiles,
+                lyricsFiles,
+                midiFiles,
+                recentlyAdded,
+                favorites,
+                storageUsed: totalSize,
+                storageLimit: req.user.storageLimit
             });
         } catch (error) {
             console.error('Get stats error:', error);

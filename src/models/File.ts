@@ -12,12 +12,13 @@ interface FileAttributes {
     size: number;
     duration?: number;
     path: string;
-    encryptedPath?: string;
-    encryptionMetadata?: any;
+    encryptedPath: string;
+    encryptionMetadata: any;
     metadata?: any;
     thumbnail?: string;
     isPublic: boolean;
     isProtected: boolean;
+    favorite: boolean;
     downloadCount: number;
     lastAccessed?: Date;
     createdAt?: Date;
@@ -25,7 +26,7 @@ interface FileAttributes {
     deletedAt?: Date;
 }
 
-interface FileCreationAttributes extends Optional<FileAttributes, 'id' | 'encryptedPath' | 'encryptionMetadata' | 'isPublic' | 'isProtected' | 'downloadCount'> {}
+interface FileCreationAttributes extends Optional<FileAttributes, 'id' | 'isPublic' | 'isProtected' | 'favorite' | 'downloadCount' | 'encryptionMetadata'> {}
 
 class File extends Model<FileAttributes, FileCreationAttributes> implements FileAttributes {
     public id!: string;
@@ -37,12 +38,13 @@ class File extends Model<FileAttributes, FileCreationAttributes> implements File
     public size!: number;
     public duration?: number;
     public path!: string;
-    public encryptedPath?: string;
-    public encryptionMetadata?: any;
+    public encryptedPath!: string;
+    public encryptionMetadata!: any;
     public metadata?: any;
     public thumbnail?: string;
     public isPublic!: boolean;
     public isProtected!: boolean;
+    public favorite!: boolean;
     public downloadCount!: number;
     public lastAccessed?: Date;
     public readonly createdAt!: Date;
@@ -64,7 +66,8 @@ File.init(
                 model: User,
                 key: 'id'
             },
-            onDelete: 'CASCADE'
+            onDelete: 'CASCADE',
+            field: 'user_id'
         },
         name: {
             type: DataTypes.STRING(255),
@@ -72,7 +75,8 @@ File.init(
         },
         originalName: {
             type: DataTypes.STRING(255),
-            allowNull: false
+            allowNull: false,
+            field: 'original_name'
         },
         type: {
             type: DataTypes.ENUM('audio', 'score', 'lyrics', 'midi', 'other'),
@@ -95,31 +99,56 @@ File.init(
             allowNull: false
         },
         encryptedPath: {
-            type: DataTypes.STRING(500)
+            type: DataTypes.STRING(500),
+            allowNull: false,
+            field: 'encrypted_path'
         },
         encryptionMetadata: {
-            type: DataTypes.JSONB
+            type: DataTypes.JSONB,
+            defaultValue: {},
+            field: 'encryption_metadata'
         },
         metadata: {
-            type: DataTypes.JSONB
+            type: DataTypes.JSONB,
+            defaultValue: {}
         },
         thumbnail: {
             type: DataTypes.STRING(500)
         },
         isPublic: {
             type: DataTypes.BOOLEAN,
-            defaultValue: false
+            defaultValue: false,
+            field: 'is_public'
         },
         isProtected: {
             type: DataTypes.BOOLEAN,
-            defaultValue: true
+            defaultValue: true,
+            field: 'is_protected'
+        },
+        favorite: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false
         },
         downloadCount: {
             type: DataTypes.INTEGER,
-            defaultValue: 0
+            defaultValue: 0,
+            field: 'download_count'
         },
         lastAccessed: {
-            type: DataTypes.DATE
+            type: DataTypes.DATE,
+            field: 'last_accessed'
+        },
+        createdAt: {
+            type: DataTypes.DATE,
+            field: 'created_at'
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            field: 'updated_at'
+        },
+        deletedAt: {
+            type: DataTypes.DATE,
+            field: 'deleted_at'
         }
     },
     {

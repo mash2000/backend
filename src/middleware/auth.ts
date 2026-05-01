@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import User from '../models/User';
 
 export interface AuthRequest extends Request {
     user?: any;
@@ -26,9 +27,21 @@ export const authenticate = async (
         
         const decoded = jwt.verify(token, secret) as any;
         
-        req.user = decoded;
+        // Загружаем пользователя из базы данных
+        const user = await User.findByPk(decoded.userId);
+        
+        if (!user) {
+            res.status(401).json({ 
+                success: false,
+                error: 'Пользователь не найден' 
+            });
+            return;
+        }
+        
+        req.user = user;
         next();
     } catch (error) {
+        console.error('Auth error:', error);
         res.status(401).json({ 
             success: false,
             error: 'Недействительный токен' 

@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { Op } from 'sequelize';
 import { AuthRequest } from '../middleware/auth';
 import User from '../models/User';
 import File from '../models/File';
@@ -32,51 +33,50 @@ export class UserController {
         try {
             const userId = req.user.id;
             
-            // Общая статистика
-            const totalFiles = await File.count({ where: { userId } });
-            const totalSize = await File.sum('size', { where: { userId } }) || 0;
+            console.log('📊 Getting stats for user:', userId);
             
-            // Статистика по типам файлов
-            const audioFiles = await File.count({ where: { userId, type: 'audio' } });
-            const scoreFiles = await File.count({ where: { userId, type: 'score' } });
-            const lyricsFiles = await File.count({ where: { userId, type: 'lyrics' } });
-            const midiFiles = await File.count({ where: { userId, type: 'midi' } });
+            // Параллельные запросы для лучшей производительности
+            const [
+                totalFilesResult,
+                totalSizeResult,
+                audioFilesResult,
+                scoreFilesResult,
+                lyricsFilesResult,
+                midiFilesResult,
+                recentlyAddedResult,
+                favoritesResult
+            ] = await Promise.all([
+                File.count({ where: { userId } }),
+                File.sum('size', { where: { userId } }),
+                File.count({ where: { userId, type: 'audio' } }),
+                File.count({ where: { userId, type: 'score' } }),
+                File.count({ where: { userId, type: 'lyrics' } }),
+                File.count({ where: { userId, type: 'midi' } }),
+                File.count({ 
+                    where: { 
+                        userId, 
+                        createdAt: { [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } 
+                    } 
+                }),
+                File.count({ where: { userId, favorite: true } })
+            ]);
             
-            // Недавно добавленные (за последние 7 дней)
-            const weekAgo = new Date();
-            weekAgo.setDate(weekAgo.getDate() - 7);
-            const recentlyAdded = await File.count({ 
-                where: { 
-                    userId, 
-                    createdAt: { [Op.gte]: weekAgo } 
-                } 
-            });
-            
-            // Избранные файлы
-            const favorites = await File.count({ where: { userId, favorite: true } });
-
-            console.log('Stats for user', userId, {
-                totalFiles,
-                audioFiles,
-                scoreFiles,
-                lyricsFiles,
-                midiFiles,
-                storageUsed: totalSize,
+            const stats = {
+                totalFiles: totalFilesResult || 0,
+                totalSize: totalSizeResult || 0,
+                audioFiles: audioFilesResult || 0,
+                scoreFiles: scoreFilesResult || 0,
+                lyricsFiles: lyricsFilesResult || 0,
+                midiFiles: midiFilesResult || 0,
+                recentlyAdded: recentlyAddedResult || 0,
+                favorites: favoritesResult || 0,
+                storageUsed: totalSizeResult || 0,
                 storageLimit: req.user.storageLimit
-            });
+            };
 
-            res.json({
-                totalFiles,
-                totalSize,
-                audioFiles,
-                scoreFiles,
-                lyricsFiles,
-                midiFiles,
-                recentlyAdded,
-                favorites,
-                storageUsed: totalSize,
-                storageLimit: req.user.storageLimit
-            });
+            console.log('📊 Stats calculated:', stats);
+
+            res.json(stats);
         } catch (error) {
             console.error('Get stats error:', error);
             res.status(500).json({ error: 'Failed to get stats' });

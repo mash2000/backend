@@ -2,12 +2,15 @@ import { DataTypes, Model, Optional } from 'sequelize';
 import sequelize from '../config/database';
 import User from './User';
 
+// Определяем типы файлов
+export type FileType = 'audio' | 'score' | 'lyrics' | 'midi' | 'other';
+
 interface FileAttributes {
     id: string;
     userId: string;
     name: string;
     originalName: string;
-    type: 'audio' | 'score' | 'lyrics' | 'midi' | 'other';
+    type: FileType;
     format: string;
     size: number;
     duration?: number;

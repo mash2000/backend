@@ -12,7 +12,6 @@ import { v4 as uuidv4 } from 'uuid';
 // Настройка multer для загрузки аватаров
 const avatarDir = path.join(__dirname, '../../uploads/avatars');
 
-// Создаем директорию если не существует
 if (!fs.existsSync(avatarDir)) {
     fs.mkdirSync(avatarDir, { recursive: true });
 }
@@ -31,14 +30,14 @@ const avatarStorage = multer.diskStorage({
 const uploadAvatar = multer({
     storage: avatarStorage,
     limits: {
-        fileSize: 2 * 1024 * 1024 // 2 MB
+        fileSize: 2 * 1024 * 1024
     },
     fileFilter: (req, file, cb) => {
         const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only images are allowed (JPEG, PNG, GIF, WEBP)'));
+            cb(new Error('Only images are allowed'));
         }
     }
 });
@@ -60,7 +59,6 @@ export class UserController {
         try {
             const { name, email } = req.body;
             
-            // Проверяем, не занят ли email другим пользователем
             if (email && email !== req.user.email) {
                 const existingUser = await User.findOne({ where: { email } });
                 if (existingUser) {
@@ -130,7 +128,7 @@ export class UserController {
         }
     }
 
-    // Смена пароля
+    // ✅ Смена пароля
     async changePassword(req: AuthRequest, res: Response): Promise<void> {
         try {
             const { currentPassword, newPassword } = req.body;
@@ -158,7 +156,12 @@ export class UserController {
             // Обновляем пароль
             await req.user.update({ passwordHash: hashedPassword });
             
-            res.json({ success: true, message: 'Password changed successfully' });
+            console.log(`✅ Password changed for user: ${req.user.email}`);
+            
+            res.json({ 
+                success: true, 
+                message: 'Password changed successfully' 
+            });
         } catch (error) {
             console.error('Change password error:', error);
             res.status(500).json({ error: 'Failed to change password' });
@@ -184,26 +187,15 @@ export class UserController {
                     return;
                 }
                 
-                console.log('📸 Avatar upload:', {
-                    fileName: file.filename,
-                    size: file.size,
-                    mimetype: file.mimetype
-                });
-                
-                // Удаляем старый аватар если существует
                 if (req.user.avatar) {
                     const oldAvatarPath = path.join(avatarDir, path.basename(req.user.avatar));
                     if (fs.existsSync(oldAvatarPath)) {
                         fs.unlinkSync(oldAvatarPath);
-                        console.log('🗑️ Old avatar deleted:', oldAvatarPath);
                     }
                 }
                 
-                // Сохраняем путь к аватару
                 const avatarUrl = `/uploads/avatars/${file.filename}`;
                 await req.user.update({ avatar: avatarUrl });
-                
-                console.log('✅ Avatar updated successfully:', avatarUrl);
                 
                 res.json({ 
                     success: true, 
@@ -224,7 +216,6 @@ export class UserController {
                 const avatarPath = path.join(avatarDir, path.basename(req.user.avatar));
                 if (fs.existsSync(avatarPath)) {
                     fs.unlinkSync(avatarPath);
-                    console.log('🗑️ Avatar deleted:', avatarPath);
                 }
                 await req.user.update({ avatar: null });
             }

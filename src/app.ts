@@ -44,8 +44,26 @@ app.use(morgan('combined', {
 // Rate limiting
 app.use('/api', apiLimiter);
 
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Настройка CORS для PDF файлов
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Настройка статических файлов для PDF
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.pdf')) {
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+            res.setHeader('Accept-Ranges', 'bytes');
+        }
+    }
+}));
 
 // Routes
 app.use('/api/auth', authRoutes);

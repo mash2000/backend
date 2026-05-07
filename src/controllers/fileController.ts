@@ -143,7 +143,8 @@ export class FileController {
                     metadata: metadata,
                     isPublic: isPublic === 'true',
                     isProtected: true,
-                    downloadCount: 0
+                    downloadCount: 0,
+                    favorite: false
                 });
 
                 console.log('✅ File saved to database:', newFile.id);
@@ -174,21 +175,27 @@ export class FileController {
 
                 console.log(`✅ File uploaded successfully: ${newFile.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) by ${user.email}`);
 
+                // Формируем ответ с файлом
+                const fileResponse = {
+                    id: newFile.id,
+                    name: newFile.name,
+                    originalName: newFile.originalName,
+                    type: newFile.type,
+                    format: newFile.format,
+                    size: newFile.size,
+                    duration: newFile.duration,
+                    createdAt: newFile.createdAt,
+                    path: `http://localhost:5000${newFile.path}`,
+                    tags: tagArray,
+                    favorite: false,
+                    protected: true,
+                    metadata: metadata
+                };
+
                 res.status(201).json({
                     success: true,
                     message: 'File uploaded successfully',
-                    file: {
-                        id: newFile.id,
-                        name: newFile.name,
-                        originalName: newFile.originalName,
-                        type: newFile.type,
-                        format: newFile.format,
-                        size: newFile.size,
-                        duration: newFile.duration,
-                        createdAt: newFile.createdAt,
-                        tags: tagArray,
-                        metadata: metadata
-                    },
+                    file: fileResponse,
                     storageUsed: currentStorage + file.size,
                     storageLimit: user.storageLimit
                 });
@@ -201,10 +208,11 @@ export class FileController {
                     fs.unlinkSync(req.file.path);
                 }
                 
+                // Возвращаем понятную ошибку
                 res.status(500).json({ 
                     success: false,
-                    error: 'File upload failed',
-                    details: process.env.NODE_ENV === 'development' ? error.message : undefined
+                    error: error.message || 'File upload failed',
+                    details: process.env.NODE_ENV === 'development' ? error.stack : undefined
                 });
             }
         });
@@ -214,21 +222,16 @@ export class FileController {
         try {
             const { page = 1, limit = 20, type, search, sort = 'createdAt', order = 'DESC' } = req.query;
             
-            console.log('📡 Get files request for user:', req.user.id);
-            console.log('Query params:', { page, limit, type, search, sort, order });
-            
             const where: any = { userId: req.user.id };
             
             if (type && type !== 'all' && type !== 'favorites') {
                 where.type = type;
-                console.log('Filtering by type:', type);
             }
             
             if (search) {
                 where.name = { [Op.iLike]: `%${search}%` };
             }
 
-            // Определяем поле сортировки
             let sortColumn = 'createdAt';
             if (sort === 'date') sortColumn = 'createdAt';
             else if (sort === 'name') sortColumn = 'name';
@@ -240,12 +243,9 @@ export class FileController {
                 limit: parseInt(limit as string),
                 offset: (parseInt(page as string) - 1) * parseInt(limit as string),
                 order: [[sortColumn, order as string]],
-                attributes: ['id', 'name', 'originalName', 'type', 'format', 'size', 'duration', 'path', 'metadata', 'favorite', 'createdAt']
+                attributes: { exclude: ['encryptionMetadata', 'encryptedPath'] }
             });
 
-            console.log(`✅ Found ${files.count} files for user ${req.user.id}`);
-            
-            // Преобразуем путь для клиента
             const filesWithUrl = files.rows.map(file => {
                 const fileData = file.toJSON();
                 fileData.path = `http://localhost:5000${fileData.path}`;
@@ -260,36 +260,11 @@ export class FileController {
             });
         } catch (error) {
             console.error('Get files error:', error);
-            res.status(500).json({ error: 'Failed to retrieve files', details: error.message });
+            res.status(500).json({ error: 'Failed to retrieve files' });
         }
     }
 
     async getFileById(req: AuthRequest, res: Response): Promise<void> {
-        try {
-            const { id } = req.params;
-            
-            const file = await File.findOne({
-                where: { id, userId: req.user.id },
-                include: [{ model: Tag, as: 'tags' }]
-            });
-
-            if (!file) {
-                res.status(404).json({ error: 'File not found' });
-                return;
-            }
-
-            // Преобразуем путь для клиента
-            const fileData = file.toJSON();
-            fileData.path = `http://localhost:5000${fileData.path}`;
-
-            res.json({ file: fileData });
-        } catch (error) {
-            console.error('Get file error:', error);
-            res.status(500).json({ error: 'Failed to retrieve file' });
-        }
-    }
-
-    async deleteFile(req: AuthRequest, res: Response): Promise<void> {
         try {
             const { id } = req.params;
             
@@ -302,22 +277,86 @@ export class FileController {
                 return;
             }
 
-            // Удаляем зашифрованный файл
-            if (fs.existsSync(file.encryptedPath)) {
-                fs.unlinkSync(file.encryptedPath);
+            const fileData = file.toJSON();
+            fileData.path = `http://localhost:5000${fileData.path}`;
+
+            res.json({ file: fileData });
+        } catch (error) {
+            console.error('Get file error:', error);
+            res.status(500).json({ error: 'Failed to retrieve file' });
+        }
+    }
+
+    // ✅ УДАЛЕНИЕ ФАЙЛА - физически и из БД (полное удаление)
+    async deleteFile(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+            
+            console.log(`🗑️ Deleting file: ${id} by user: ${req.user.id}`);
+            
+            // Находим файл в базе данных (включая soft-deleted)
+            const file = await File.findOne({
+                where: { id, userId: req.user.id },
+                paranoid: false  // Включаем поиск soft-deleted записей
+            });
+
+            if (!file) {
+                console.log(`❌ File not found: ${id}`);
+                res.status(404).json({ error: 'File not found' });
+                return;
             }
 
-            // Обновляем использование хранилища пользователя
+            console.log(`📁 File info:`, {
+                id: file.id,
+                name: file.name,
+                path: file.path,
+                encryptedPath: file.encryptedPath,
+                deletedAt: file.deletedAt
+            });
+
+            // 1. Удаляем физический файл из директории encrypted
+            if (file.encryptedPath && fs.existsSync(file.encryptedPath)) {
+                try {
+                    fs.unlinkSync(file.encryptedPath);
+                    console.log(`✅ Deleted encrypted file: ${file.encryptedPath}`);
+                } catch (err) {
+                    console.error(`❌ Failed to delete encrypted file: ${err}`);
+                }
+            } else {
+                console.log(`⚠️ Encrypted file not found: ${file.encryptedPath}`);
+            }
+
+            // 2. Удаляем временный файл если существует
+            if (file.path && fs.existsSync(file.path) && file.path !== file.encryptedPath) {
+                try {
+                    fs.unlinkSync(file.path);
+                    console.log(`✅ Deleted temp file: ${file.path}`);
+                } catch (err) {
+                    console.error(`❌ Failed to delete temp file: ${err}`);
+                }
+            }
+
+            // 3. Удаляем связи с тегами
+            await FileTag.destroy({ where: { fileId: file.id }, force: true });
+            console.log(`✅ Deleted file-tag relations`);
+
+            // 4. Обновляем использование хранилища пользователя
             const currentStorage = req.user.storageUsed || 0;
-            await req.user.update({ storageUsed: Math.max(0, currentStorage - file.size) });
+            const newStorage = Math.max(0, currentStorage - file.size);
+            await req.user.update({ storageUsed: newStorage });
+            console.log(`✅ Updated user storage: ${currentStorage} -> ${newStorage}`);
 
-            // Удаляем теги
-            await FileTag.destroy({ where: { fileId: file.id } });
+            // 5. ПОЛНОЕ УДАЛЕНИЕ из базы данных (force: true - игнорирует paranoid)
+            await file.destroy({ force: true });
+            console.log(`✅ Permanently deleted database record`);
 
-            // Удаляем из базы данных
-            await file.destroy();
+            console.log(`✅ File fully deleted: ${file.name}`);
 
-            res.json({ success: true, message: 'File deleted successfully' });
+            res.json({ 
+                success: true, 
+                message: 'File deleted successfully',
+                storageUsed: newStorage
+            });
         } catch (error) {
             console.error('Delete error:', error);
             res.status(500).json({ error: 'Failed to delete file' });
@@ -338,13 +377,11 @@ export class FileController {
                 return;
             }
 
-            // Обновляем базовую информацию
             if (name) file.name = name;
             if (isPublic !== undefined) file.isPublic = isPublic;
             if (favorite !== undefined) file.favorite = favorite;
             if (metadata) file.metadata = { ...file.metadata, ...metadata };
             
-            // Обновляем теги
             if (tags && Array.isArray(tags)) {
                 await FileTag.destroy({ where: { fileId: file.id } });
                 
@@ -364,11 +401,15 @@ export class FileController {
             await file.save();
 
             const updatedFile = await File.findOne({
-                where: { id: file.id },
-                include: [{ model: Tag, as: 'tags' }]
+                where: { id: file.id }
             });
 
-            res.json({ success: true, message: 'File updated successfully', file: updatedFile });
+            const fileData = updatedFile?.toJSON();
+            if (fileData) {
+                fileData.path = `http://localhost:5000${fileData.path}`;
+            }
+
+            res.json({ success: true, message: 'File updated successfully', file: fileData });
         } catch (error) {
             console.error('Update error:', error);
             res.status(500).json({ error: 'Failed to update file' });
@@ -388,13 +429,16 @@ export class FileController {
                 return;
             }
 
-            // Обновляем счетчик скачиваний
+            if (!fs.existsSync(file.encryptedPath)) {
+                res.status(404).json({ error: 'File not found on server' });
+                return;
+            }
+
             await file.update({
                 downloadCount: (file.downloadCount || 0) + 1,
                 lastAccessed: new Date()
             });
 
-            // Отправляем файл
             res.download(file.encryptedPath, file.originalName);
         } catch (error) {
             console.error('Download error:', error);

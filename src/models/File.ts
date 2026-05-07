@@ -2,15 +2,12 @@ import { DataTypes, Model, Optional } from 'sequelize';
 import sequelize from '../config/database';
 import User from './User';
 
-// Определяем типы файлов
-export type FileType = 'audio' | 'score' | 'lyrics' | 'midi' | 'other';
-
 interface FileAttributes {
     id: string;
     userId: string;
     name: string;
     originalName: string;
-    type: FileType;
+    type: 'audio' | 'score' | 'lyrics' | 'midi' | 'other';
     format: string;
     size: number;
     duration?: number;
@@ -140,26 +137,19 @@ File.init(
         lastAccessed: {
             type: DataTypes.DATE,
             field: 'last_accessed'
-        },
-        createdAt: {
-            type: DataTypes.DATE,
-            field: 'created_at'
-        },
-        updatedAt: {
-            type: DataTypes.DATE,
-            field: 'updated_at'
-        },
-        deletedAt: {
-            type: DataTypes.DATE,
-            field: 'deleted_at'
         }
     },
     {
         sequelize,
         tableName: 'files',
-        paranoid: true,
         timestamps: true,
-        underscored: true
+        underscored: true,
+        paranoid: true,  // soft delete - запись не удаляется, а получает deletedAt
+        indexes: [
+            { fields: ['user_id'] },
+            { fields: ['type'] },
+            { fields: ['created_at'] }
+        ]
     }
 );
 

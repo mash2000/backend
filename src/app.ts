@@ -52,6 +52,9 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// Добавьте после других статических маршрутов
+app.use('/uploads/avatars', express.static(path.join(__dirname, '../uploads/avatars')));
+
 // Настройка статических файлов для PDF
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
     setHeaders: (res, filePath) => {

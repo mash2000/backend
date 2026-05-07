@@ -8,15 +8,22 @@ interface UserAttributes {
     passwordHash: string;
     name: string;
     role: 'user' | 'premium' | 'admin';
+    avatar?: string;
     isActive: boolean;
+    emailVerified: boolean;
     lastLogin?: Date;
+    twoFactorEnabled: boolean;
+    twoFactorSecret?: string;
+    encryptedMasterKey?: string;
+    keySalt?: string;
     storageUsed: number;
     storageLimit: number;
     createdAt?: Date;
     updatedAt?: Date;
+    deletedAt?: Date;
 }
 
-interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'role' | 'isActive' | 'storageUsed' | 'storageLimit'> {}
+interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'role' | 'isActive' | 'emailVerified' | 'twoFactorEnabled' | 'storageUsed' | 'storageLimit' | 'avatar'> {}
 
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
     public id!: string;
@@ -24,15 +31,27 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
     public passwordHash!: string;
     public name!: string;
     public role!: 'user' | 'premium' | 'admin';
+    public avatar?: string;
     public isActive!: boolean;
+    public emailVerified!: boolean;
     public lastLogin?: Date;
+    public twoFactorEnabled!: boolean;
+    public twoFactorSecret?: string;
+    public encryptedMasterKey?: string;
+    public keySalt?: string;
     public storageUsed!: number;
     public storageLimit!: number;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
+    public readonly deletedAt?: Date;
 
     async validatePassword(password: string): Promise<boolean> {
         return bcrypt.compare(password, this.passwordHash);
+    }
+
+    async updateStorage(size: number): Promise<void> {
+        this.storageUsed += size;
+        await this.save();
     }
 }
 
@@ -63,12 +82,33 @@ User.init(
             type: DataTypes.ENUM('user', 'premium', 'admin'),
             defaultValue: 'user'
         },
+        avatar: {
+            type: DataTypes.STRING(500),
+            allowNull: true
+        },
         isActive: {
             type: DataTypes.BOOLEAN,
             defaultValue: true
         },
+        emailVerified: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false
+        },
         lastLogin: {
             type: DataTypes.DATE
+        },
+        twoFactorEnabled: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false
+        },
+        twoFactorSecret: {
+            type: DataTypes.STRING(100)
+        },
+        encryptedMasterKey: {
+            type: DataTypes.TEXT
+        },
+        keySalt: {
+            type: DataTypes.STRING(64)
         },
         storageUsed: {
             type: DataTypes.BIGINT,
@@ -83,7 +123,8 @@ User.init(
         sequelize,
         tableName: 'users',
         timestamps: true,
-        underscored: true
+        underscored: true,
+        paranoid: true
     }
 );
 

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
+import sequelize from '../config/database';
 
 export interface AuthRequest extends Request {
     user?: any;
@@ -12,12 +13,22 @@ export const authenticate = async (
     next: NextFunction
 ): Promise<void> => {
     try {
+        // Проверяем соединение с БД
+        try {
+            await sequelize.authenticate();
+        } catch (dbError) {
+            console.error('Database connection error in auth:', dbError);
+            res.status(503).json({ 
+                error: 'Service temporarily unavailable' 
+            });
+            return;
+        }
+
         const authHeader = req.headers.authorization;
         
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             res.status(401).json({ 
-                success: false,
-                error: 'Требуется авторизация' 
+                error: 'No token provided' 
             });
             return;
         }
@@ -27,13 +38,11 @@ export const authenticate = async (
         
         const decoded = jwt.verify(token, secret) as any;
         
-        // Загружаем пользователя из базы данных
         const user = await User.findByPk(decoded.userId);
         
         if (!user) {
             res.status(401).json({ 
-                success: false,
-                error: 'Пользователь не найден' 
+                error: 'User not found' 
             });
             return;
         }
@@ -42,9 +51,16 @@ export const authenticate = async (
         next();
     } catch (error) {
         console.error('Auth error:', error);
-        res.status(401).json({ 
-            success: false,
-            error: 'Недействительный токен' 
-        });
+        
+        // Не выходим из аккаунта при ошибках соединения
+        if (error.name === 'JsonWebTokenError') {
+            res.status(401).json({ error: 'Invalid token' });
+        } else if (error.name === 'TokenExpiredError') {
+            res.status(401).json({ error: 'Token expired' });
+        } else if (error.code === 'ECONNRESET') {
+            res.status(503).json({ error: 'Service temporarily unavailable' });
+        } else {
+            res.status(500).json({ error: 'Authentication failed' });
+        }
     }
 };

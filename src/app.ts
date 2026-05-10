@@ -21,6 +21,29 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Функция для проверки и восстановления подключения
+async function ensureDatabaseConnection() {
+    try {
+        await sequelize.authenticate();
+        console.log('✅ Database connection is active');
+        return true;
+    } catch (error) {
+        console.error('❌ Database connection lost:', error);
+        
+        // Пытаемся переподключиться
+        try {
+            console.log('🔄 Attempting to reconnect...');
+            await sequelize.close();
+            await sequelize.authenticate();
+            console.log('✅ Database reconnected successfully');
+            return true;
+        } catch (reconnectError) {
+            console.error('❌ Failed to reconnect:', reconnectError);
+            return false;
+        }
+    }
+}
+
 // Middleware
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" }
@@ -74,13 +97,21 @@ app.use('/api/files', fileRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/search', searchRoutes);
 
-// Health check
-app.get('/health', (req: Request, res: Response) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-    });
+app.get('/health', async (req, res) => {
+    try {
+        await sequelize.authenticate();
+        res.json({ 
+            status: 'ok', 
+            database: 'connected',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(503).json({ 
+            status: 'error', 
+            database: 'disconnected',
+            timestamp: new Date().toISOString()
+        });
+    }
 });
 
 // 404 handler
@@ -109,6 +140,16 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+// Middleware для проверки соединения перед запросами
+app.use(async (req, res, next) => {
+    const isConnected = await ensureDatabaseConnection();
+    if (!isConnected) {
+        res.status(503).json({ error: 'Database connection unavailable' });
+        return;
+    }
+    next();
+});
 
 // Error handler
 app.use(errorHandler);

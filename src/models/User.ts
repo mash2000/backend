@@ -7,7 +7,7 @@ interface UserAttributes {
     email: string;
     passwordHash: string;
     name: string;
-    role: 'user' | 'premium' | 'admin';
+    role: 'user' | 'admin';
     avatar?: string;
     isActive: boolean;
     emailVerified: boolean;
@@ -30,7 +30,7 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
     public email!: string;
     public passwordHash!: string;
     public name!: string;
-    public role!: 'user' | 'premium' | 'admin';
+    public role!: 'user' | 'admin';
     public avatar?: string;
     public isActive!: boolean;
     public emailVerified!: boolean;
@@ -79,7 +79,7 @@ User.init(
             allowNull: false
         },
         role: {
-            type: DataTypes.ENUM('user', 'premium', 'admin'),
+            type: DataTypes.ENUM('user', 'admin'),
             defaultValue: 'user'
         },
         avatar: {

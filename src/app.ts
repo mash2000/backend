@@ -12,6 +12,7 @@ import authRoutes from './routes/auth';
 import fileRoutes from './routes/files';
 import userRoutes from './routes/user';
 import searchRoutes from './routes/search';
+import adminRoutes from './routes/admin';
 import { apiLimiter } from './middleware/rateLimiter';
 import { errorHandler } from './middleware/errorHandler';
 import logger from './utils/logger';
@@ -96,6 +97,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/health', async (req, res) => {
     try {

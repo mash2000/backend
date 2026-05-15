@@ -165,7 +165,7 @@ export class FileController {
                 }
 
                 // Обновляем использование хранилища пользователя
-                const currentStorage = user.storageUsed || 0;
+                const currentStorage = +user.storageUsed || 0;
                 await user.update({ storageUsed: currentStorage + file.size });
 
                 // Удаляем временный файл
@@ -341,7 +341,7 @@ export class FileController {
             console.log(`✅ Deleted file-tag relations`);
 
             // 4. Обновляем использование хранилища пользователя
-            const currentStorage = req.user.storageUsed || 0;
+            const currentStorage = +req.user.storageUsed || 0;
             const newStorage = Math.max(0, currentStorage - file.size);
             await req.user.update({ storageUsed: newStorage });
             console.log(`✅ Updated user storage: ${currentStorage} -> ${newStorage}`);

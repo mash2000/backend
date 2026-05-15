@@ -10,7 +10,6 @@ import path from 'path';
 import fs from 'fs';
 
 export class AdminController {
-    // Проверка прав администратора
     private checkAdmin(req: AuthRequest, res: Response): boolean {
         if (req.user.role !== 'admin') {
             res.status(403).json({ error: 'Access denied. Admin rights required.' });
@@ -47,7 +46,7 @@ export class AdminController {
             
             // Получаем статистику для каждого пользователя
             const usersWithStats = await Promise.all(users.rows.map(async (user) => {
-                // Правильный подсчет размера всех файлов пользователя
+                // Правильный подсчет размера всех файлов пользователя - ИСПРАВЛЕНО
                 const totalSizeResult = await File.findOne({
                     where: { userId: user.id },
                     attributes: [[sequelize.fn('SUM', sequelize.col('size')), 'totalSize']],
@@ -56,7 +55,10 @@ export class AdminController {
                 });
                 
                 const fileCount = await File.count({ where: { userId: user.id }, paranoid: false });
-                const totalSize = totalSizeResult?.totalSize || 0;
+                // Исправлено: используем правильное обращение к результату
+                const totalSize = totalSizeResult && typeof totalSizeResult === 'object' 
+                    ? Number((totalSizeResult as any).totalSize || 0) 
+                    : 0;
                 
                 // Формируем URL аватара
                 let avatarUrl = null;
@@ -70,7 +72,7 @@ export class AdminController {
                     email: user.email,
                     role: user.role,
                     isActive: user.isActive,
-                    storageUsed: Number(totalSize),
+                    storageUsed: totalSize,
                     storageLimit: user.storageLimit,
                     fileCount,
                     createdAt: user.createdAt,
@@ -92,82 +94,6 @@ export class AdminController {
         }
     }
 
-    // Полное удаление пользователя (физическое удаление из БД)
-    async deleteUser(req: AuthRequest, res: Response): Promise<void> {
-        if (!this.checkAdmin(req, res)) return;
-        
-        try {
-            const { id } = req.params;
-            
-            // Нельзя удалить самого себя
-            if (id === req.user.id) {
-                res.status(400).json({ error: 'Cannot delete your own account' });
-                return;
-            }
-            
-            const user = await User.findByPk(id, { paranoid: false });
-            if (!user) {
-                res.status(404).json({ error: 'User not found' });
-                return;
-            }
-            
-            console.log(`🗑️ Администратор удаляет пользователя: ${user.email} (${user.id})`);
-            
-            // 1. Получаем все файлы пользователя
-            const files = await File.findAll({ where: { userId: id }, paranoid: false });
-            console.log(`📁 Найдено файлов: ${files.length}`);
-            
-            // 2. Удаляем физические файлы с диска
-            for (const file of files) {
-                try {
-                    // Удаляем зашифрованный файл
-                    if (file.encryptedPath && fs.existsSync(file.encryptedPath)) {
-                        fs.unlinkSync(file.encryptedPath);
-                        console.log(`✅ Удален файл: ${file.encryptedPath}`);
-                    }
-                    // Удаляем временный файл если существует
-                    if (file.path && fs.existsSync(file.path) && file.path !== file.encryptedPath) {
-                        fs.unlinkSync(file.path);
-                        console.log(`✅ Удален временный файл: ${file.path}`);
-                    }
-                } catch (err) {
-                    console.error(`❌ Ошибка удаления файла ${file.id}:`, err);
-                }
-            }
-            
-            // 3. Удаляем связи с тегами
-            await sequelize.query(`DELETE FROM file_tags WHERE "fileId" IN (SELECT id FROM files WHERE user_id = :userId)`, {
-                replacements: { userId: id }
-            });
-            console.log(`✅ Удалены связи тегов`);
-            
-            // 4. Удаляем все файлы пользователя из БД (физически)
-            await File.destroy({ where: { userId: id }, force: true });
-            console.log(`✅ Удалены файлы пользователя из БД`);
-            
-            // 5. Удаляем аватар пользователя если есть
-            if (user.avatar) {
-                const avatarPath = path.join(__dirname, '../../uploads/avatars', path.basename(user.avatar));
-                if (fs.existsSync(avatarPath)) {
-                    fs.unlinkSync(avatarPath);
-                    console.log(`✅ Удален аватар: ${avatarPath}`);
-                }
-            }
-            
-            // 6. Полное физическое удаление пользователя из БД (force: true игнорирует paranoid)
-            await user.destroy({ force: true });
-            console.log(`✅ Пользователь ${user.email} полностью удален из БД`);
-            
-            res.json({ 
-                message: 'User and all associated data permanently deleted',
-                deletedFiles: files.length
-            });
-        } catch (error) {
-            console.error('Delete user error:', error);
-            res.status(500).json({ error: 'Failed to delete user' });
-        }
-    }
-
     // Получение пользователя по ID
     async getUserById(req: AuthRequest, res: Response): Promise<void> {
         if (!this.checkAdmin(req, res)) return;
@@ -175,7 +101,8 @@ export class AdminController {
         try {
             const { id } = req.params;
             const user = await User.findByPk(id, {
-                attributes: { exclude: ['passwordHash', 'encryptedMasterKey', 'keySalt', 'twoFactorSecret'] }
+                attributes: { exclude: ['passwordHash', 'encryptedMasterKey', 'keySalt', 'twoFactorSecret'] },
+                paranoid: false
             });
             
             if (!user) {
@@ -183,14 +110,29 @@ export class AdminController {
                 return;
             }
             
-            const fileCount = await File.count({ where: { userId: user.id } });
-            const totalSize = await File.sum('size', { where: { userId: user.id } }) || 0;
+            const fileCount = await File.count({ where: { userId: user.id }, paranoid: false });
+            const totalSizeResult = await File.findOne({
+                where: { userId: user.id },
+                attributes: [[sequelize.fn('SUM', sequelize.col('size')), 'totalSize']],
+                raw: true,
+                paranoid: false
+            });
+            const totalSize = totalSizeResult && typeof totalSizeResult === 'object' 
+                ? Number((totalSizeResult as any).totalSize || 0) 
+                : 0;
+                
             const files = await File.findAll({
                 where: { userId: user.id },
                 limit: 10,
                 order: [['createdAt', 'DESC']],
-                attributes: ['id', 'name', 'type', 'size', 'createdAt']
+                attributes: ['id', 'name', 'type', 'size', 'createdAt'],
+                paranoid: false
             });
+            
+            let avatarUrl = null;
+            if (user.avatar) {
+                avatarUrl = user.avatar.startsWith('http') ? user.avatar : `http://localhost:5000${user.avatar}`;
+            }
             
             res.json({
                 user: {
@@ -202,7 +144,8 @@ export class AdminController {
                     storageUsed: totalSize,
                     storageLimit: user.storageLimit,
                     createdAt: user.createdAt,
-                    lastLogin: user.lastLogin
+                    lastLogin: user.lastLogin,
+                    avatar: avatarUrl
                 },
                 stats: { fileCount, totalSize },
                 recentFiles: files
@@ -274,7 +217,6 @@ export class AdminController {
                 return;
             }
             
-            // Проверка уникальности email
             if (email && email !== user.email) {
                 const existingUser = await User.findOne({ where: { email } });
                 if (existingUser) {
@@ -338,6 +280,79 @@ export class AdminController {
         }
     }
 
+    // Удаление пользователя
+    async deleteUser(req: AuthRequest, res: Response): Promise<void> {
+        if (!this.checkAdmin(req, res)) return;
+        
+        try {
+            const { id } = req.params;
+            
+            if (id === req.user.id) {
+                res.status(400).json({ error: 'Cannot delete your own account' });
+                return;
+            }
+            
+            const user = await User.findByPk(id, { paranoid: false });
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+            
+            console.log(`🗑️ Администратор удаляет пользователя: ${user.email} (${user.id})`);
+            
+            // Получаем все файлы пользователя
+            const files = await File.findAll({ where: { userId: id }, paranoid: false });
+            console.log(`📁 Найдено файлов: ${files.length}`);
+            
+            // Удаляем физические файлы с диска
+            for (const file of files) {
+                try {
+                    if (file.encryptedPath && fs.existsSync(file.encryptedPath)) {
+                        fs.unlinkSync(file.encryptedPath);
+                        console.log(`✅ Удален файл: ${file.encryptedPath}`);
+                    }
+                    if (file.path && fs.existsSync(file.path) && file.path !== file.encryptedPath) {
+                        fs.unlinkSync(file.path);
+                        console.log(`✅ Удален временный файл: ${file.path}`);
+                    }
+                } catch (err) {
+                    console.error(`❌ Ошибка удаления файла ${file.id}:`, err);
+                }
+            }
+            
+            // Удаляем связи с тегами
+            await sequelize.query(`DELETE FROM file_tags WHERE "fileId" IN (SELECT id FROM files WHERE user_id = :userId)`, {
+                replacements: { userId: id }
+            });
+            console.log(`✅ Удалены связи тегов`);
+            
+            // Удаляем все файлы пользователя из БД
+            await File.destroy({ where: { userId: id }, force: true });
+            console.log(`✅ Удалены файлы пользователя из БД`);
+            
+            // Удаляем аватар пользователя если есть
+            if (user.avatar) {
+                const avatarPath = path.join(__dirname, '../../uploads/avatars', path.basename(user.avatar));
+                if (fs.existsSync(avatarPath)) {
+                    fs.unlinkSync(avatarPath);
+                    console.log(`✅ Удален аватар: ${avatarPath}`);
+                }
+            }
+            
+            // Полное физическое удаление пользователя из БД
+            await user.destroy({ force: true });
+            console.log(`✅ Пользователь ${user.email} полностью удален из БД`);
+            
+            res.json({ 
+                message: 'User and all associated data permanently deleted',
+                deletedFiles: files.length
+            });
+        } catch (error) {
+            console.error('Delete user error:', error);
+            res.status(500).json({ error: 'Failed to delete user' });
+        }
+    }
+
     // Получение системной статистики
     async getSystemStats(req: AuthRequest, res: Response): Promise<void> {
         if (!this.checkAdmin(req, res)) return;
@@ -347,13 +362,15 @@ export class AdminController {
             const activeUsers = await User.count({ where: { isActive: true }, paranoid: false });
             const totalFiles = await File.count({ paranoid: false });
             
-            // Правильный подсчет общего объема всех файлов
+            // Правильный подсчет общего объема всех файлов - ИСПРАВЛЕНО
             const totalSizeResult = await File.findOne({
                 attributes: [[sequelize.fn('SUM', sequelize.col('size')), 'totalSize']],
                 raw: true,
                 paranoid: false
             });
-            const totalSize = totalSizeResult?.totalSize || 0;
+            const totalSize = totalSizeResult && typeof totalSizeResult === 'object' 
+                ? Number((totalSizeResult as any).totalSize || 0) 
+                : 0;
             
             // Статистика по ролям с правильными названиями
             const adminCount = await User.count({ where: { role: 'admin' }, paranoid: false });
@@ -410,12 +427,6 @@ export class AdminController {
             res.status(500).json({ error: 'Failed to get system stats' });
         }
     }
-    
-    private formatBytes(bytes: number): string {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
 }
+
+export default AdminController;

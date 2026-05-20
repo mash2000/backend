@@ -92,6 +92,16 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
     }
 }));
 
+// Middleware для проверки соединения перед запросами
+app.use(async (req, res, next) => {
+    const isConnected = await ensureDatabaseConnection();
+    if (!isConnected) {
+        res.status(503).json({ error: 'Database connection unavailable' });
+        return;
+    }
+    next();
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/files', fileRoutes);
@@ -142,16 +152,6 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-
-// Middleware для проверки соединения перед запросами
-app.use(async (req, res, next) => {
-    const isConnected = await ensureDatabaseConnection();
-    if (!isConnected) {
-        res.status(503).json({ error: 'Database connection unavailable' });
-        return;
-    }
-    next();
-});
 
 // Error handler
 app.use(errorHandler);
